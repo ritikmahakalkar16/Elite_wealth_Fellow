@@ -11,6 +11,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
+import { put } from '@vercel/blob';
 let uuidv4;
 (async () => {
   const { v4 } = await import('uuid');
@@ -26,9 +27,17 @@ const {
 const fs = require('fs');
 const path = require('path');
 const ExcelJS = require('exceljs');
-const cron = require('node-cron');
+//const cron = require('node-cron');
 require('dotenv').config();
 const tokenBlacklist = new Set();
+
+// ADD REVOKED TOKEN MODEL HERE
+const revokedTokenSchema = new mongoose.Schema({
+  token: { type: String, required: true, unique: true },
+  expires_at: { type: Date, required: true, index: { expires: '1d' } }
+});
+revokedTokenSchema.index({ expires_at: 1 }, { expireAfterSeconds: 0 });
+const RevokedToken = mongoose.model('RevokedToken', revokedTokenSchema);
 
 // ------------------- CONFIG -------------------
 const MONGO_URI =
@@ -303,16 +312,41 @@ const storage = multer.diskStorage({
     cb(null, `${uuidv4()}${path.extname(file.originalname)}`),
 });
 
+// const upload = multer({
+//   storage,
+//   limits: { fileSize: 5 * 1024 * 1024 },
+//   fileFilter: (req, file, cb) => {
+//     if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
+//       return cb(new Error('Only JPG/PNG allowed'));
+//     }
+//     cb(null, true);
+//   },
+// });
+
+
+
+import { put } from '@vercel/blob';
+
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(), // Keep in memory
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
-      return cb(new Error('Only JPG/PNG allowed'));
+      return cb(new Error('Only JPG/PNG'));
     }
     cb(null, true);
   },
 });
+
+// In your route:
+const imageUrls = await Promise.all(
+  req.files.map(async (file) => {
+    const { url } = await put(`uploads/${uuidv4()}${path.extname(file.originalname)}`, file.buffer, {
+      access: 'public',
+    });
+    return url;
+  })
+);
 
 // ------------------- RATE LIMIT -------------------
 const authLimiter = rateLimit({
@@ -912,7 +946,9 @@ cron.schedule('0 0 * * *', async () => {
 });
 
 // ------------------- EXPRESS APP -------------------
-const app = express();
+// const app = express();
+global.expressApp = express(); // ← Export app globally
+const app = global.expressApp;
 app.use(helmet());
 app.use(cors());
 // app.use(cors({
@@ -1164,50 +1200,85 @@ app.post('/auth/login', async (req, res) => {
 
 
 // ------------------- LOGOUT API -------------------
-app.post('/auth/logout', authMiddleware, async (req, res) => {
+// app.post('/auth/logout', authMiddleware, async (req, res) => {
+//   try {
+//     const token = req.headers.authorization?.split(' ')[1];
+//     if (!token) {
+//       return res.status(400).json({
+//         data: null,
+//         error: { code: 'BAD_REQUEST', message: 'No token provided' },
+//       });
+//     }
+
+//     // Blacklist the token (in-memory)
+//     tokenBlacklist.add(token);
+
+//     // Optional: Auto-remove after expiry
+//     const decoded = jwt.decode(token);
+//     if (decoded?.exp) {
+//       const timeLeft = (decoded.exp * 1000) - Date.now();
+//       if (timeLeft > 0) {
+//         setTimeout(() => tokenBlacklist.delete(token), timeLeft);
+//       }
+//     }
+
+//     // Audit logout
+//     await auditLog(
+//       'auth',
+//       req.user.user_id,
+//       'LOGOUT',
+//       null,
+//       { message: 'User logged out' },
+//       req.user.user_id
+//     );
+
+//     res.json({
+//       data: { success: true, message: 'Logged out successfully' },
+//       error: null,
+//     });
+//   } catch (error) {
+//     res.status(500).json({
+//       data: null,
+//       error: { code: 'LOGOUT_ERROR', message: 'Logout failed' },
+//     });
+//   }
+// });
+
+
+// LOGOUT ROUTE  (replace your existing one)
+app.post('/auth/logout', verifyToken, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
-    if (!token) {
-      return res.status(400).json({
-        data: null,
-        error: { code: 'BAD_REQUEST', message: 'No token provided' },
-      });
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(400).json({ message: 'No token' });
     }
 
-    // Blacklist the token (in-memory)
-    tokenBlacklist.add(token);
+    const token = authHeader.split(' ')[1];
 
-    // Optional: Auto-remove after expiry
-    const decoded = jwt.decode(token);
-    if (decoded?.exp) {
-      const timeLeft = (decoded.exp * 1000) - Date.now();
-      if (timeLeft > 0) {
-        setTimeout(() => tokenBlacklist.delete(token), timeLeft);
-      }
+    // Get expiry from token (without verifying again)
+    let decoded;
+    try {
+      decoded = jwt.decode(token); // decode only, no verify
+    } catch {
+      return res.status(400).json({ message: 'Invalid token' });
     }
 
-    // Audit logout
-    await auditLog(
-      'auth',
-      req.user.user_id,
-      'LOGOUT',
-      null,
-      { message: 'User logged out' },
-      req.user.user_id
-    );
+    if (!decoded?.exp) {
+      return res.status(400).json({ message: 'Token has no expiry' });
+    }
 
-    res.json({
-      data: { success: true, message: 'Logged out successfully' },
-      error: null,
+    // SAVE TO BLACKLIST
+    await RevokedToken.create({
+      token,
+      expires_at: new Date(decoded.exp * 1000)
     });
-  } catch (error) {
-    res.status(500).json({
-      data: null,
-      error: { code: 'LOGOUT_ERROR', message: 'Logout failed' },
-    });
+
+    return res.json({ message: 'Logged out successfully' });
+  } catch (err) {
+    console.error('Logout error:', err);
+    return res.status(500).json({ message: 'Logout failed' });
   }
 });
-
 
 
 
@@ -3798,22 +3869,22 @@ app.use((error, req, res, next) => {
     .json({ data: null, error: { code: 'INTERNAL_ERROR', message: error.message } });
 });
 
-
-
-app.get("/", (req, res) => {
-  res.send("Elite wealth project backend is  running");
-});
-
-
 // ------------------- START SERVER -------------------
+
+
 async function startServer() {
   await connectDB();
   await setupDatabase();
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  // REMOVE: app.listen(PORT, ...)
+// REPLACE WITH:
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 4000;
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Local server running on http://localhost:${PORT}`);
   });
 }
 
+// DO NOT CALL app.listen() in Vercel
+}
 
 startServer();
-

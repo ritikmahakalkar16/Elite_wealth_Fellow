@@ -2,7 +2,7 @@
   "name": "mongoose_backend",
   "version": "1.0.0",
   "main": "index.js",
-   "engines": {
+  "engines": {
     "node": "20.x"
   },
   "scripts": {
@@ -13,6 +13,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@vercel/blob": "^2.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
