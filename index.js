@@ -6,11 +6,16 @@ const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const multer = require('multer');
-const { v4: uuidv4 } = require('uuid');
+// const { v4: uuidv4 } = require('uuid');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
+let uuidv4;
+(async () => {
+  const { v4 } = await import('uuid');
+  uuidv4 = v4;
+})();
 const {
   addMonths,
   setDate,
@@ -3811,3 +3816,4 @@ async function startServer() {
 
 
 startServer();
+
