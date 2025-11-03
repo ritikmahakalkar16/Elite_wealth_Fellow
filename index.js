@@ -3793,6 +3793,13 @@ app.use((error, req, res, next) => {
     .json({ data: null, error: { code: 'INTERNAL_ERROR', message: error.message } });
 });
 
+
+
+app.get("/", (req, res) => {
+  res.send("Elite wealth project backend is  running");
+});
+
+
 // ------------------- START SERVER -------------------
 async function startServer() {
   await connectDB();
@@ -3801,5 +3808,6 @@ async function startServer() {
     console.log(`Server running on port ${PORT}`);
   });
 }
+
 
 startServer();
