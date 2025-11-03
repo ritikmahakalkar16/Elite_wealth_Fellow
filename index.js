@@ -3870,6 +3870,9 @@ app.use((error, req, res, next) => {
 });
 
 // ------------------- START SERVER -------------------
+app.get("/", (req, res) => {
+  res.send("Isa Nagpur acadamia project running");
+});
 
 
 async function startServer() {
