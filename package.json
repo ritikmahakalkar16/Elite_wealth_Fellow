@@ -1,15 +1,13 @@
 {
-  "name": "elite-wealth-backend",
+  "name": "mongoose_backend",
   "version": "1.0.0",
-  "description": "Elite Wealth Full Backend for Vercel",
   "main": "index.js",
-  "type": "module",
- 
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "dev": "node index.js",
-  
+    "start": "node index.js"
   },
   "author": "",
   "license": "ISC",
