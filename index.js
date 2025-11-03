@@ -3313,10 +3313,6 @@ app.use((error, req, res, next) => {
 });
 
 
-app.get("/", (req, res) => {
-  res.send("server of elite weaalth running");
-});
-
 // === EXPORT FOR VERCEL + LOCAL LISTEN ===
 connectDB().catch(console.error);
 await setupDatabase();
@@ -3340,3 +3336,4 @@ if (process.env.NODE_ENV !== 'production') {
     });
   });
 }
+
